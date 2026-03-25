@@ -1,4 +1,4 @@
-# 🧠 Vidora AI - 3 Day Hackathon Sprint
+# 🧠 Vidora AI 
 
 Vidora AI is an intelligent video analysis platform built with Next.js and FastAPI, powered by a Hybrid AI strategy (Local + Cloud).
 
