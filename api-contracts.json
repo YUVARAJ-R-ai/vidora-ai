@@ -1,0 +1,31 @@
+{
+    "Upload": {
+        "Endpoint": "POST /upload",
+        "Request": "FormData (file: video)",
+        "Response": {
+            "video_id": "vid_12345",
+            "status": "processing"
+        }
+    },
+    "Status": {
+        "Endpoint": "GET /status/{video_id}",
+        "Response": {
+            "video_id": "vid_12345",
+            "status": "processing",
+            "progress": 45
+        }
+    },
+    "Query": {
+        "Endpoint": "POST /query",
+        "Request": {
+            "video_id": "vid_12345",
+            "query": "Find when a person appears"
+        },
+        "Response": {
+            "timestamps": [12, 45, 78],
+            "objects": ["person"],
+            "confidence": 0.92,
+            "response": "The person appears at 0:12, 0:45, and 1:18."
+        }
+    }
+}
