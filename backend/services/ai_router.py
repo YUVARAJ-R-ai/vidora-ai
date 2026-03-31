@@ -38,7 +38,7 @@ def _call_ollama(prompt: str) -> str:
     """Call Ollama's /api/generate endpoint (local Docker development)."""
     url = f"{OLLAMA_BASE_URL}/api/generate"
     payload = {
-        "model": "llama3.2",
+        "model": "llama3",
         "prompt": prompt,
         "stream": False,
     }
