@@ -119,13 +119,24 @@ def list_my_videos(
 @router.get("/stream/{video_id}")
 def stream_video(
     video_id: str,
+    token: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    """Serve the uploaded video file for playback."""
+    """Serve the uploaded video file for playback safely via query token auth."""
+    from auth import SECRET_KEY, ALGORITHM
+    from jose import jwt, JWTError
+    
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
     video = (
         db.query(Video)
-        .filter(Video.id == video_id, Video.user_id == current_user.id)
+        .filter(Video.id == video_id, Video.user_id == user_id)
         .first()
     )
     if not video:

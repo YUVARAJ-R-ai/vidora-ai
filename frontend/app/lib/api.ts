@@ -141,5 +141,6 @@ export async function queryVideo(videoId: string, query: string) {
 }
 
 export function getVideoStreamUrl(videoId: string): string {
-  return `${API_BASE}/videos/stream/${videoId}`;
+  const token = getToken();
+  return `${API_BASE}/videos/stream/${videoId}?token=${token || ""}`;
 }

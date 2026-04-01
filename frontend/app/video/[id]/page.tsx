@@ -315,57 +315,54 @@ export default function VideoDashboard() {
       <div className="dashboard-layout">
         {/* ── LEFT: Video + Analysis ────────────────────────── */}
         <div className="player-section">
-          {/* Video Player */}
-          <div className="video-glass-wrapper">
+          {/* Video Player & overlay */}
+          <div className="video-glass-wrapper" style={{ position: "relative" }}>
             <video preload="auto" crossOrigin="anonymous" ref={videoRef} controls src={getVideoStreamUrl(videoId)} />
-          </div>
-
-          {/* Emoji Timeline */}
-          <div className="section-card glass-panel">
-            <h3 className="section-title">🎯 Analysis Timeline</h3>
-            <p className="section-desc">Click markers to jump to that moment</p>
-            <div className="emoji-timeline">
-              <div className="timeline-track" />
-              {visualDetections.map((d, i) => {
-                const leftPerc =
-                  duration > 0 ? (d.timestamp_sec / duration) * 100 : i * 5;
-                const mainEmotion = d.objects_json.emotions?.[0];
-                const emoji = mainEmotion
-                  ? EMOTION_EMOJIS[mainEmotion.emotion] || "📍"
-                  : "📍";
-                return (
-                  <motion.div
-                    key={d.id}
-                    className="emoji-marker"
-                    style={{ left: `${Math.min(leftPerc, 96)}%` }}
-                    onClick={() => seekTo(d.timestamp_sec)}
-                    whileHover={{ scale: 1.4 }}
-                    title={`${d.timestamp_sec}s — ${
-                      mainEmotion ? mainEmotion.emotion : d.objects_json.objects?.join(", ")
-                    }`}
-                  >
-                    {emoji}
-                  </motion.div>
-                );
-              })}
-              {/* Audio markers */}
-              {audioSegments.map((seg, i) => {
-                const leftPerc =
-                  duration > 0 ? (seg.start / duration) * 100 : 0;
-                return (
-                  <motion.div
-                    key={`audio-${i}`}
-                    className={`emoji-marker ${seg.isLoud ? "loud-marker" : ""}`}
-                    style={{ left: `${Math.min(leftPerc, 96)}%`, top: "28px" }}
-                    onClick={() => seekTo(seg.start)}
-                    whileHover={{ scale: 1.4 }}
-                    title={`${seg.start}s — ${seg.isLoud ? "📢 LOUD: " : "🗣️ "}${seg.text}`}
-                  >
-                    {seg.isLoud ? "📢" : "🗣️"}
-                  </motion.div>
-                );
-              })}
-            </div>
+            
+            {duration > 0 && (
+              <div className="emoji-timeline-overlay">
+                <div className="timeline-track" />
+                {visualDetections.map((d, i) => {
+                  const leftPerc =
+                    duration > 0 ? (d.timestamp_sec / duration) * 100 : i * 5;
+                  const mainEmotion = d.objects_json.emotions?.[0];
+                  const emoji = mainEmotion
+                    ? EMOTION_EMOJIS[mainEmotion.emotion] || "📍"
+                    : "📍";
+                  return (
+                    <motion.div
+                      key={d.id}
+                      className="emoji-marker"
+                      style={{ left: `${Math.min(leftPerc, 96)}%` }}
+                      onClick={() => seekTo(d.timestamp_sec)}
+                      whileHover={{ scale: 1.4 }}
+                      title={`${d.timestamp_sec}s — ${
+                        mainEmotion ? mainEmotion.emotion : d.objects_json.objects?.join(", ")
+                      }`}
+                    >
+                      {emoji}
+                    </motion.div>
+                  );
+                })}
+                {/* Audio markers */}
+                {audioSegments.map((seg, i) => {
+                  const leftPerc =
+                    duration > 0 ? (seg.start / duration) * 100 : 0;
+                  return (
+                    <motion.div
+                      key={`audio-${i}`}
+                      className={`emoji-marker ${seg.isLoud ? "loud-marker" : ""}`}
+                      style={{ left: `${Math.min(leftPerc, 96)}%`, top: "28px" }}
+                      onClick={() => seekTo(seg.start)}
+                      whileHover={{ scale: 1.4 }}
+                      title={`${seg.start}s — ${seg.isLoud ? "📢 LOUD: " : "🗣️ "}${seg.text}`}
+                    >
+                      {seg.isLoud ? "📢" : "🗣️"}
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Stats Row: Emotion Chart + Audio Transcript */}

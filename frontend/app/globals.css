@@ -500,21 +500,10 @@ video {
 }
 
 /* ── Emoji Timeline ────────────────────────────────────────── */
-.emoji-timeline {
-  position: relative;
-  height: 56px;
-  margin-top: 0.75rem;
-}
-
-.timeline-track {
+.emoji-timeline-overlay {
   position: absolute;
-  top: 14px;
+  bottom: 0px;
   left: 0;
-  right: 0;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 3px;
-  overflow: hidden;
 }
 
 .timeline-track::after {
