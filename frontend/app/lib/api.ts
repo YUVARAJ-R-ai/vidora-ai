@@ -122,6 +122,14 @@ export async function getMyVideos() {
   return res.json();
 }
 
+export async function cancelVideoProcessing(videoId: string) {
+  const res = await apiFetch(`/videos/cancel/${videoId}`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error("Cancel failed");
+  return res.json();
+}
+
 export async function queryVideo(videoId: string, query: string) {
   const res = await apiFetch("/query/", {
     method: "POST",

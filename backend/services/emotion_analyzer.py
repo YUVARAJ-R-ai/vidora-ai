@@ -50,7 +50,7 @@ def analyze_emotions(frame_path: str) -> List[Dict[str, Any]]:
 
             # Get dominant emotion and its confidence
             dominant = face.get("dominant_emotion", "neutral")
-            confidence = round(emotion_scores.get(dominant, 0) / 100.0, 4)
+            confidence = round(float(emotion_scores.get(dominant, 0)) / 100.0, 4)
 
             # Only include if confidence is reasonable
             if confidence > 0.3:

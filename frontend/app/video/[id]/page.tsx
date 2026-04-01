@@ -5,11 +5,11 @@ import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import {
-  getVideoStatus,
   getVideoResults,
   queryVideo,
   getToken,
   getVideoStreamUrl,
+  cancelVideoProcessing,
 } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 
@@ -71,7 +71,7 @@ export default function VideoDashboard() {
   const router = useRouter();
   const videoId = params.id as string;
 
-  const [status, setStatus] = useState("processing");
+  const [status, setStatus] = useState("loading");
   const [detections, setDetections] = useState<DetectionData[]>([]);
   const [chatLog, setChatLog] = useState<ChatMsg[]>([]);
   const [query, setQuery] = useState("");
@@ -84,48 +84,57 @@ export default function VideoDashboard() {
   // Auth guard
   useEffect(() => {
     if (!getToken()) router.push("/login");
-  }, []);
+  }, [router]);
 
   // Auto-scroll chat
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatLog, querying]);
 
-  // Poll for status
+  // Poll for live results during processing
   useEffect(() => {
-    if (status === "done" || status === "failed") return;
+    if (status === "done" || status === "failed" || status === "cancelled") {
+      return;
+    }
 
     const interval = setInterval(async () => {
       try {
-        const data = await getVideoStatus(videoId);
+        const data = await getVideoResults(videoId);
         if (data) {
           setStatus(data.status);
-          if (data.status === "done") {
+          setDetections(data.detections || []);
+          
+          if (data.status === "done" && chatLog.length === 0) {
+            setChatLog([
+              {
+                role: "ai",
+                content: "✨ Multi-modal analysis complete! I've detected objects, emotions, scenes, and audio. Ask me anything about this video!",
+              },
+            ]);
             clearInterval(interval);
-            fetchResults();
+          } else if (data.status === "failed" || data.status === "cancelled") {
+            clearInterval(interval);
           }
         }
       } catch (err) {
         console.error("Poll error", err);
       }
-    }, 3000);
+    }, 2000);
+
+    // Initial fetch
+    getVideoResults(videoId).then(data => {
+        if(data) {
+            setStatus(data.status);
+            setDetections(data.detections || []);
+            if(data.status === "done" && chatLog.length === 0) {
+               setChatLog([{ role: "ai", content: "✨ Multi-modal analysis complete! Ask me anything about this video!" }]);
+            }
+        }
+    });
 
     return () => clearInterval(interval);
-  }, [videoId, status]);
+  }, [videoId, status, chatLog.length]);
 
-  const fetchResults = async () => {
-    const data = await getVideoResults(videoId);
-    if (data) {
-      setDetections(data.detections || []);
-      setChatLog([
-        {
-          role: "ai",
-          content:
-            "✨ Multi-modal analysis complete! I've detected objects, emotions, scenes, and audio. Ask me anything about this video!",
-        },
-      ]);
-    }
-  };
 
   // ── Derived data ────────────────────────────────────────────
   const visualDetections = useMemo(
@@ -195,52 +204,97 @@ export default function VideoDashboard() {
     }
   };
 
+  const handleCancel = async () => {
+    if (!confirm("Are you sure you want to cancel the analysis?")) return;
+    try {
+      await cancelVideoProcessing(videoId);
+      setStatus("cancelled");
+      router.push("/");
+    } catch (e) {
+      console.error(e);
+      alert("Failed to cancel.");
+    }
+  };
+
   const duration = videoRef.current?.duration || 100;
 
-  // ── Processing State ────────────────────────────────────────
+  // ── Loading State ───────────────────────────────────────────
+  if (status === "loading") {
+      return <div className="dashboard-page" style={{paddingTop: "5rem", textAlign: "center", color: "var(--text-muted)"}}>Loading data...</div>
+  }
+
+  // ── Cancelled / Failed State ────────────────────────────────
+  if (status === "cancelled" || status === "failed") {
+    return (
+       <div className="dashboard-page" style={{ paddingTop: "8rem", textAlign: "center" }}>
+          <div style={{fontSize: "4rem", marginBottom: "1rem"}}>🚫</div>
+          <h2 className="title" style={{ fontSize: "2rem" }}>Analysis <span className="title-accent" style={{color: "#ef4444"}}>{status.toUpperCase()}</span></h2>
+          <p style={{ color: "var(--text-muted)", marginTop: "1rem" }}>This video process was {status}. Partial data may be saved.</p>
+          <button onClick={() => router.push("/")} className="upload-btn" style={{marginTop: "2rem"}}>Return to Dashboard</button>
+       </div>
+    );
+  }
+
+  // ── Processing State (Live UI) ──────────────────────────────
   if (status === "processing" || status === "pending") {
     return (
-      <div className="upload-container">
-        <motion.div
-          initial={{ scale: 0.9 }}
-          animate={{ scale: 1 }}
-          transition={{ duration: 0.5 }}
-          style={{ textAlign: "center" }}
-        >
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
-            style={{ fontSize: "4rem", marginBottom: "1.5rem", display: "inline-block" }}
-          >
-            ⚙️
-          </motion.div>
-          <h2 className="title" style={{ fontSize: "2.5rem" }}>
-            Analyzing <span className="title-accent">Intelligence</span>
-          </h2>
-          <div className="processing-steps">
-            {["Extracting frames", "Detecting objects", "Analyzing emotions", "Captioning scenes", "Transcribing audio"].map(
-              (step, i) => (
-                <motion.div
-                  key={step}
-                  className="processing-step"
-                  initial={{ opacity: 0.3 }}
-                  animate={{ opacity: [0.3, 1, 0.3] }}
-                  transition={{ repeat: Infinity, duration: 2, delay: i * 0.4 }}
-                >
-                  <span className="step-dot" /> {step}
-                </motion.div>
-              )
-            )}
+      <div className="dashboard-page flex flex-col" style={{ minHeight: "100vh", paddingBottom: "3rem" }}>
+         <div className="top-bar">
+          <div className="top-bar-brand" onClick={() => router.push("/")} style={{ cursor: "pointer" }}>
+            🎬 <span className="title-accent">Vidora AI</span>
           </div>
-          <p style={{ color: "var(--text-muted)", marginTop: "2rem" }}>
-            This may take a few minutes for longer videos...
-          </p>
-        </motion.div>
+          <div className="top-bar-actions">
+            <button className="nav-link" onClick={() => router.push("/")}>Dashboard</button>
+          </div>
+        </div>
+        
+        <div style={{ maxWidth: "800px", margin: "5rem auto 3rem", textAlign: "center" }}>
+          <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 4, ease: "linear" }} style={{ fontSize: "3rem", display: "inline-block" }}>⚙️</motion.div>
+          <h2 className="title" style={{ fontSize: "2rem", marginTop: "1rem" }}>Analyzing <span className="title-accent">Intelligence</span></h2>
+          <p style={{ color: "var(--text-muted)" }}>Running DeepFace, Salesforce BLIP, and YOLOv8 models in the background...</p>
+          
+          <button onClick={handleCancel} className="upload-btn" style={{ background: "linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)", marginTop: "2rem", boxShadow: "0 0 20px rgba(239, 68, 68, 0.3)" }}>
+            🚫 Cancel Analysis
+          </button>
+        </div>
+
+        <div style={{ maxWidth: "1000px", margin: "0 auto", padding: "0 2rem", flexGrow: 1, width: "100%" }}>
+           <h3 style={{ marginBottom: "1.5rem", color: "var(--text-muted)", display: "flex", gap: "10px", alignItems: "center", fontSize: "1.2rem", fontWeight: 500 }}>
+             <div className="live-indicator" style={{width: "10px", height: "10px", background: "#ef4444", borderRadius: "50%", boxShadow: "0 0 10px #ef4444"}}></div>
+             Live Frame Stream ({visualDetections.length} recorded)
+           </h3>
+           
+           {visualDetections.length === 0 ? (
+               <div className="glass-panel" style={{padding: "3rem", textAlign: "center", color: "var(--text-muted)", borderStyle: "dashed", opacity: 0.7}}>
+                   Waiting for first frame to be analyzed... (This might take a few minutes if downloading AI models for the first time).
+               </div>
+           ) : (
+               <div className="scene-cards" style={{ display: "grid", gap: "1rem", maxHeight: "400px", overflowY: "auto", paddingRight: "10px", paddingBottom: "20px" }}>
+                {visualDetections.slice().reverse().map((d, i) => {
+                  const mainEmotion = d.objects_json.emotions?.[0];
+                  return (
+                    <motion.div key={d.id} className="scene-card glass-panel" initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{duration: 0.3}} style={{margin: 0, background: "rgba(20,20,30,0.8)"}}>
+                      <div className="scene-card-header">
+                        <span className="scene-time" style={{ color: "var(--accent)" }}>{d.timestamp_sec}s</span>
+                        {mainEmotion && (
+                          <span className="scene-emotion-badge" style={{ background: EMOTION_COLORS[mainEmotion.emotion] + "30", color: EMOTION_COLORS[mainEmotion.emotion] }}>
+                            {EMOTION_EMOJIS[mainEmotion.emotion]} {mainEmotion.emotion}
+                          </span>
+                        )}
+                      </div>
+                      <p className="scene-objects" style={{ margin: "5px 0" }}>{d.objects_json.objects?.join(", ") || "—"}</p>
+                      {d.objects_json.scene_caption && <p className="scene-caption" style={{ color: "var(--text-muted)" }}>"{d.objects_json.scene_caption}"</p>}
+                    </motion.div>
+                  );
+                })}
+               </div>
+           )}
+        </div>
       </div>
     );
   }
 
-  // ── Dashboard ───────────────────────────────────────────────
+  // ── Dashboard Layout (Done) ─────────────────────────────────
   return (
     <div className="dashboard-page">
       {/* Top bar */}
@@ -249,11 +303,8 @@ export default function VideoDashboard() {
           🎬 <span className="title-accent">Vidora AI</span>
         </div>
         <div className="top-bar-actions">
-          <button className="nav-link" onClick={() => router.push("/videos")}>
-            My Videos
-          </button>
           <button className="nav-link" onClick={() => router.push("/")}>
-            Upload
+            Dashboard
           </button>
           <button className="nav-link logout-btn" onClick={logout}>
             Logout
@@ -266,7 +317,7 @@ export default function VideoDashboard() {
         <div className="player-section">
           {/* Video Player */}
           <div className="video-glass-wrapper">
-            <video ref={videoRef} controls src={getVideoStreamUrl(videoId)} />
+            <video preload="auto" crossOrigin="anonymous" ref={videoRef} controls src={getVideoStreamUrl(videoId)} />
           </div>
 
           {/* Emoji Timeline */}

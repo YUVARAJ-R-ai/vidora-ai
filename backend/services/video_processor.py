@@ -96,6 +96,11 @@ def process_video_pipeline(video_id: str, file_path: str):
         from services.scene_captioner import caption_frame
 
         for idx, fname in enumerate(frame_files):
+            db.refresh(video)
+            if video.status in ("cancelled", "failed"):
+                print(f"[{video_id}] Processing aborted by user.")
+                break
+
             frame_path = os.path.join(frames_dir, fname)
             frame_number = idx + 1
             timestamp_sec = round(frame_number / FPS, 2)
@@ -153,6 +158,11 @@ def process_video_pipeline(video_id: str, file_path: str):
                   f"(objects={len(detected_labels)}, emotions={len(emotions)}, "
                   f"caption={'yes' if scene_caption else 'no'})")
 
+        db.refresh(video)
+        if video.status in ("cancelled", "failed"):
+            print(f"[{video_id}] Audio processing skipped due to cancellation.")
+            return
+
         # ── Step 3: Audio analysis ────────────────────────────
         print(f"[{video_id}] Starting audio analysis...")
         try:
@@ -187,9 +197,11 @@ def process_video_pipeline(video_id: str, file_path: str):
             print(f"  Audio analysis failed (non-fatal): {e}")
 
         # ── Step 4: Mark video as done ────────────────────────
-        video.status = "done"
-        db.commit()
-        print(f"[{video_id}] Processing complete!")
+        db.refresh(video)
+        if video.status not in ("cancelled", "failed"):
+            video.status = "done"
+            db.commit()
+            print(f"[{video_id}] Processing complete!")
 
     except Exception as e:
         print(f"Error processing video {video_id}: {e}")

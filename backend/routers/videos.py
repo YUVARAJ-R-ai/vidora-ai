@@ -140,3 +140,23 @@ def stream_video(
         filename=video.filename,
     )
 
+
+@router.post("/cancel/{video_id}", response_model=VideoStatusResponse)
+def cancel_video_processing(
+    video_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    video = (
+        db.query(Video)
+        .filter(Video.id == video_id, Video.user_id == current_user.id)
+        .first()
+    )
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    if video.status in ("processing", "pending"):
+        video.status = "cancelled"
+        db.commit()
+
+    return {"video_id": video.id, "status": video.status}

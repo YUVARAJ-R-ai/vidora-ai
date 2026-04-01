@@ -26,6 +26,7 @@ services:
       - ./backend:/app
       - ./uploads:/app/uploads
       - ./frames:/app/frames
+      - huggingface_cache:/root/.cache
     environment:
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql://vidora:vidora@db:5432/vidora
@@ -66,4 +67,5 @@ volumes:
   postgres_data:
   ollama_data:
   frontend_node_modules:
+  huggingface_cache:
 
