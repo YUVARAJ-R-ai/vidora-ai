@@ -27,17 +27,20 @@ def _is_complex(query: str) -> bool:
 
 def _build_prompt(query: str, context: str) -> str:
     return (
-        "You are analyzing a video using multi-modal AI. You have:\n"
-        "- Object detection: what objects appear in each frame\n"
-        "- Facial emotion recognition: what emotions people are showing\n"
-        "- Scene captions: natural language descriptions of each frame\n"
-        "- Audio transcription: what people are saying, with [LOUD] markers for shouting\n\n"
-        "Here is the analysis data:\n\n"
+        "You are an expert multi-modal UI assistant analyzing a video.\n"
+        "You have access to:\n"
+        "- Object detection (YOLO)\n"
+        "- Facial emotions (DeepFace)\n"
+        "- Scene captions (BLIP)\n"
+        "- Audio transcriptions (Whisper)\n\n"
+        "Here is the data:\n\n"
         f"{context}\n\n"
-        f"User question: {query}\n"
-        "Answer based on ALL the available data. Reference specific timestamps when relevant. "
-        "If the question is about emotions, prioritize the emotion data. "
-        "If about speech or sounds, prioritize the audio data."
+        f"User question: {query}\n\n"
+        "CRITICAL INSTRUCTIONS:\n"
+        "1. Be extremely direct, concise, and straight to the point.\n"
+        "2. DO NOT mention 'inconsistencies' between different models (e.g., if YOLO sees a bear but BLIP sees a monkey). Synthesize the most logical conclusion confidently without complaining to the user.\n"
+        "3. Never narrate your own chain of thought. Just answer the question.\n"
+        "4. Always prioritize human element and action. If emotions spike, highlight what triggered it."
     )
 
 
