@@ -10,6 +10,66 @@ from services.ai_router import route_query
 router = APIRouter(prefix="/query", tags=["Query"])
 
 
+def _build_rich_context(detections) -> str:
+    """
+    Build a multi-modal context string from enriched detection records.
+
+    Separates visual detections (objects, emotions, captions) from
+    audio detections (transcripts, loudness) for clarity.
+    """
+    visual_lines = []
+    audio_lines = []
+
+    for det in detections:
+        data = det.objects_json if isinstance(det.objects_json, dict) else {}
+        ts = det.timestamp_sec
+
+        # Check if this is an audio detection
+        audio = data.get("audio")
+        if audio:
+            loud_tag = "[LOUD] " if audio.get("is_loud") else ""
+            end_sec = audio.get("end_sec", ts)
+            transcript = audio.get("transcript", "")
+            audio_lines.append(
+                f"Audio {ts}s-{end_sec}s: {loud_tag}\"{transcript}\""
+            )
+            continue
+
+        # Visual detection — build a rich line
+        parts = []
+
+        # Objects
+        objects = data.get("objects", [])
+        if objects:
+            parts.append(f"Objects: {', '.join(objects)}")
+
+        # Emotions
+        emotions = data.get("emotions", [])
+        if emotions:
+            emo_strs = [
+                f"{e['emotion']} ({e['confidence']:.0%})"
+                for e in emotions
+            ]
+            parts.append(f"Emotions: {', '.join(emo_strs)}")
+
+        # Scene caption
+        caption = data.get("scene_caption")
+        if caption:
+            parts.append(f"Scene: \"{caption}\"")
+
+        if parts:
+            visual_lines.append(f"At {ts}s: {' | '.join(parts)}")
+
+    # Combine visual and audio context
+    sections = []
+    if visual_lines:
+        sections.append("Visual analysis:\n" + "\n".join(visual_lines))
+    if audio_lines:
+        sections.append("Audio analysis:\n" + "\n".join(audio_lines))
+
+    return "\n\n".join(sections) if sections else "No detection data available."
+
+
 @router.post("/", response_model=QueryResponse)
 def ask_query(
     payload: QueryRequest,
@@ -31,7 +91,7 @@ def ask_query(
             detail=f"Video is not ready yet. Current status: {video.status}",
         )
 
-    # Gather detection context
+    # Gather ALL detection context (visual + audio), capped at 50
     detections = (
         db.query(Detection)
         .filter(Detection.video_id == payload.video_id)
@@ -40,12 +100,8 @@ def ask_query(
         .all()
     )
 
-    # Build context string
-    context_lines = []
-    for det in detections:
-        objects = det.objects_json.get("objects", []) if isinstance(det.objects_json, dict) else []
-        context_lines.append(f"At {det.timestamp_sec}s: {', '.join(objects)}")
-    context = "\n".join(context_lines)
+    # Build rich multi-modal context
+    context = _build_rich_context(detections)
 
     # Route the query through AI
     response_text, model_used = route_query(payload.query, context)

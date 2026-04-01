@@ -13,3 +13,9 @@ httpx
 python-dotenv
 alembic
 google-generativeai
+deepface
+tf-keras
+openai-whisper
+transformers
+librosa
+soundfile

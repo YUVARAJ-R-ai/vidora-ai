@@ -3,6 +3,7 @@ import uuid
 
 import aiofiles
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -113,3 +114,29 @@ def list_my_videos(
         .all()
     )
     return videos
+
+
+@router.get("/stream/{video_id}")
+def stream_video(
+    video_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Serve the uploaded video file for playback."""
+    video = (
+        db.query(Video)
+        .filter(Video.id == video_id, Video.user_id == current_user.id)
+        .first()
+    )
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    if not os.path.exists(video.filepath):
+        raise HTTPException(status_code=404, detail="Video file not found on disk")
+
+    return FileResponse(
+        video.filepath,
+        media_type="video/mp4",
+        filename=video.filename,
+    )
+

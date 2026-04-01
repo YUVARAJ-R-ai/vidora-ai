@@ -27,10 +27,17 @@ def _is_complex(query: str) -> bool:
 
 def _build_prompt(query: str, context: str) -> str:
     return (
-        "You are analyzing a video. Objects detected at timestamps:\n\n"
+        "You are analyzing a video using multi-modal AI. You have:\n"
+        "- Object detection: what objects appear in each frame\n"
+        "- Facial emotion recognition: what emotions people are showing\n"
+        "- Scene captions: natural language descriptions of each frame\n"
+        "- Audio transcription: what people are saying, with [LOUD] markers for shouting\n\n"
+        "Here is the analysis data:\n\n"
         f"{context}\n\n"
         f"User question: {query}\n"
-        "Answer based only on the detection data. Include timestamps when relevant."
+        "Answer based on ALL the available data. Reference specific timestamps when relevant. "
+        "If the question is about emotions, prioritize the emotion data. "
+        "If about speech or sounds, prioritize the audio data."
     )
 
 

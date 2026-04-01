@@ -1,3 +1,18 @@
+"""
+Enhanced Video Processing Pipeline.
+
+1. FFmpeg frame extraction (0.5 FPS, 480p)
+2. Per-frame analysis:
+   a. YOLOv8n object detection
+   b. DeepFace facial emotion recognition
+   c. BLIP scene captioning (every 2nd frame)
+3. Audio analysis:
+   a. FFmpeg audio extraction
+   b. Whisper tiny transcription
+   c. Amplitude-based shouting detection
+4. Persist enriched Detection records to DB
+5. Update Video status
+"""
 import os
 import subprocess
 
@@ -24,15 +39,13 @@ except Exception as e:
 
 FRAMES_BASE_DIR = "/app/frames"
 FPS = 0.5  # extract 1 frame every 2 seconds
+BLIP_EVERY_N = 2  # Caption every 2nd frame to save time
 
 
 def process_video_pipeline(video_id: str, file_path: str):
     """
-    Full processing pipeline:
-    1. FFmpeg frame extraction at 0.5 FPS, scaled to 480p width
-    2. YOLOv8 nano detection on each frame
-    3. Persist Detection records to DB
-    4. Update Video status to done/failed
+    Full multi-modal processing pipeline.
+    Runs as a FastAPI BackgroundTask with its own DB session.
     """
     db: Session = SessionLocal()
     try:
@@ -51,7 +64,7 @@ def process_video_pipeline(video_id: str, file_path: str):
             "ffmpeg", "-i", file_path,
             "-vf", f"fps={FPS},scale=480:-1",
             os.path.join(frames_dir, "frame_%04d.jpg"),
-            "-y",  # overwrite
+            "-y",
         ]
 
         result = subprocess.run(
@@ -65,7 +78,6 @@ def process_video_pipeline(video_id: str, file_path: str):
             db.commit()
             return
 
-        # ── Step 2: Run YOLO on each frame ────────────────────
         frame_files = sorted(
             f for f in os.listdir(frames_dir) if f.endswith(".jpg")
         )
@@ -76,47 +88,108 @@ def process_video_pipeline(video_id: str, file_path: str):
             db.commit()
             return
 
+        # ── Step 2: Per-frame analysis ────────────────────────
+        print(f"[{video_id}] Processing {len(frame_files)} frames...")
+
+        # Lazy-import analysis services (heavy dependencies)
+        from services.emotion_analyzer import analyze_emotions
+        from services.scene_captioner import caption_frame
+
         for idx, fname in enumerate(frame_files):
             frame_path = os.path.join(frames_dir, fname)
-            # Timestamp = frame_number / fps
-            # frame_number is 1-indexed from ffmpeg naming
             frame_number = idx + 1
-            timestamp_sec = frame_number / FPS
+            timestamp_sec = round(frame_number / FPS, 2)
 
-            if yolo_model is None:
-                continue
-
-            results = yolo_model(frame_path, verbose=False)
+            # ── 2a. YOLO object detection ─────────────────────
             detected_labels = []
             confidences = []
 
-            for res in results:
-                for box in res.boxes:
-                    conf = float(box.conf[0])
-                    if conf > 0.4:
-                        cls_id = int(box.cls[0])
-                        label = yolo_model.names[cls_id]
-                        detected_labels.append(label)
-                        confidences.append(conf)
+            if yolo_model is not None:
+                results = yolo_model(frame_path, verbose=False)
+                for res in results:
+                    for box in res.boxes:
+                        conf = float(box.conf[0])
+                        if conf > 0.4:
+                            cls_id = int(box.cls[0])
+                            label = yolo_model.names[cls_id]
+                            detected_labels.append(label)
+                            confidences.append(conf)
 
-            # Only save frames with at least one detection
-            if detected_labels:
-                mean_conf = round(sum(confidences) / len(confidences), 4)
+            # ── 2b. DeepFace emotion analysis ─────────────────
+            emotions = analyze_emotions(frame_path)
+
+            # ── 2c. BLIP scene captioning (every Nth frame) ───
+            scene_caption = None
+            if frame_number % BLIP_EVERY_N == 0 or frame_number == 1:
+                scene_caption = caption_frame(frame_path)
+
+            # ── Build enriched detection record ───────────────
+            # Save if we have ANY data (objects, emotions, or caption)
+            if detected_labels or emotions or scene_caption:
+                mean_conf = round(
+                    sum(confidences) / len(confidences), 4
+                ) if confidences else 0.0
+
+                objects_json = {
+                    "objects": detected_labels,
+                    "confidence": mean_conf,
+                }
+
+                if emotions:
+                    objects_json["emotions"] = emotions
+
+                if scene_caption:
+                    objects_json["scene_caption"] = scene_caption
+
                 detection = Detection(
                     video_id=video_id,
-                    timestamp_sec=round(timestamp_sec, 2),
-                    objects_json={
-                        "objects": detected_labels,
-                        "confidence": mean_conf,
-                    },
+                    timestamp_sec=timestamp_sec,
+                    objects_json=objects_json,
                 )
                 db.add(detection)
                 db.commit()
 
-        # ── Step 3: Mark video as done ────────────────────────
+            print(f"  Frame {frame_number}/{len(frame_files)} done "
+                  f"(objects={len(detected_labels)}, emotions={len(emotions)}, "
+                  f"caption={'yes' if scene_caption else 'no'})")
+
+        # ── Step 3: Audio analysis ────────────────────────────
+        print(f"[{video_id}] Starting audio analysis...")
+        try:
+            from services.audio_analyzer import analyze_audio
+
+            audio_segments = analyze_audio(file_path, frames_dir)
+
+            for seg in audio_segments:
+                audio_detection = Detection(
+                    video_id=video_id,
+                    timestamp_sec=seg["start"],
+                    objects_json={
+                        "objects": [],
+                        "confidence": 0.0,
+                        "audio": {
+                            "transcript": seg["text"],
+                            "is_loud": seg.get("is_loud", False),
+                            "amplitude_db": seg.get("amplitude_db", 0.0),
+                            "end_sec": seg["end"],
+                        }
+                    },
+                )
+                db.add(audio_detection)
+
+            if audio_segments:
+                db.commit()
+                print(f"  Audio: {len(audio_segments)} segments transcribed")
+            else:
+                print(f"  Audio: no audio track or no speech detected")
+
+        except Exception as e:
+            print(f"  Audio analysis failed (non-fatal): {e}")
+
+        # ── Step 4: Mark video as done ────────────────────────
         video.status = "done"
         db.commit()
-        print(f"Video {video_id} processing complete.")
+        print(f"[{video_id}] Processing complete!")
 
     except Exception as e:
         print(f"Error processing video {video_id}: {e}")
