@@ -2,7 +2,7 @@ import os
 import uuid
 
 import aiofiles
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 async def upload_video(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    yolo_model: str = Form("yolov8n"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -50,11 +51,9 @@ async def upload_video(
     db.commit()
     db.refresh(db_video)
 
-    background_tasks.add_task(process_video_pipeline, video_id, file_path)
+    background_tasks.add_task(process_video_pipeline, video_id, file_path, yolo_model)
 
     return {"video_id": video_id, "status": "processing"}
-
-
 @router.get("/status/{video_id}", response_model=VideoStatusResponse)
 def get_video_status(
     video_id: str,
@@ -171,3 +170,39 @@ def cancel_video_processing(
         db.commit()
 
     return {"video_id": video.id, "status": video.status}
+
+@router.delete("/{video_id}")
+def delete_video(
+    video_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    video = (
+        db.query(Video)
+        .filter(Video.id == video_id, Video.user_id == current_user.id)
+        .first()
+    )
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    # Purge MP4
+    if video.filepath and os.path.exists(video.filepath):
+        try:
+            os.remove(video.filepath)
+        except Exception:
+            pass
+
+    # Purge extracted YOLO frames
+    frames_dir = os.path.join("/app/frames", video_id)
+    if os.path.exists(frames_dir):
+        try:
+            import shutil
+            shutil.rmtree(frames_dir)
+        except Exception:
+            pass
+
+    # SQLAlchemy cascade triggers detection wiping automatically
+    db.delete(video)
+    db.commit()
+
+    return {"detail": "Video completely purged from system."}

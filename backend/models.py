@@ -33,8 +33,8 @@ class Video(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     owner = relationship("User", back_populates="videos")
-    detections = relationship("Detection", back_populates="video")
-    queries = relationship("Query", back_populates="video")
+    detections = relationship("Detection", back_populates="video", cascade="all, delete-orphan")
+    queries = relationship("Query", back_populates="video", cascade="all, delete-orphan")
 
 
 class Detection(Base):

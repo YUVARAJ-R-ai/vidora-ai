@@ -91,9 +91,10 @@ export async function registerUser(email: string, password: string) {
   return res.json();
 }
 
-export async function uploadVideo(file: File) {
+export async function uploadVideo(file: File, yoloModel: string = "yolov8n") {
   const formData = new FormData();
   formData.append("file", file);
+  formData.append("yolo_model", yoloModel);
 
   const res = await apiFetch("/videos/upload", {
     method: "POST",
@@ -143,4 +144,8 @@ export async function queryVideo(videoId: string, query: string) {
 export function getVideoStreamUrl(videoId: string): string {
   const token = getToken();
   return `${API_BASE}/videos/stream/${videoId}?token=${token || ""}`;
+}
+
+export async function deleteVideo(videoId: string) {
+  return await apiFetch(`/videos/${videoId}`, { method: "DELETE" });
 }

@@ -30,19 +30,29 @@ try:
 except Exception:
     pass
 
-# ── Preload YOLO model ───────────────────────────────────────
-try:
-    yolo_model = YOLO("yolov8n.pt")
-except Exception as e:
-    print(f"Warning: Could not load YOLO model: {e}")
-    yolo_model = None
+# ── Dynamic YOLO loader ──────────────────────────────────────
+global_yolo_model = None
+global_yolo_name = None
+
+def get_yolo_model(model_name: str):
+    global global_yolo_model, global_yolo_name
+    if global_yolo_name != model_name:
+        try:
+            print(f"Loading new YOLO architecture: {model_name}.pt into memory...")
+            global_yolo_model = YOLO(f"{model_name}.pt")
+            global_yolo_name = model_name
+        except Exception as e:
+            print(f"Warning: Could not load YOLO model {model_name}: {e}")
+            global_yolo_model = None
+            global_yolo_name = None
+    return global_yolo_model
 
 FRAMES_BASE_DIR = "/app/frames"
 FPS = 0.5  # extract 1 frame every 2 seconds
 BLIP_EVERY_N = 2  # Caption every 2nd frame to save time
 
 
-def process_video_pipeline(video_id: str, file_path: str):
+def process_video_pipeline(video_id: str, file_path: str, yolo_model_name: str = "yolov8n"):
     """
     Full multi-modal processing pipeline.
     Runs as a FastAPI BackgroundTask with its own DB session.
@@ -109,14 +119,15 @@ def process_video_pipeline(video_id: str, file_path: str):
             detected_labels = []
             confidences = []
 
-            if yolo_model is not None:
-                results = yolo_model(frame_path, verbose=False)
+            current_yolo = get_yolo_model(yolo_model_name)
+            if current_yolo is not None:
+                results = current_yolo(frame_path, verbose=False)
                 for res in results:
                     for box in res.boxes:
                         conf = float(box.conf[0])
                         if conf > 0.4:
                             cls_id = int(box.cls[0])
-                            label = yolo_model.names[cls_id]
+                            label = current_yolo.names[cls_id]
                             detected_labels.append(label)
                             confidences.append(conf)
 

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { uploadVideo, getMyVideos, getToken } from "./lib/api";
+import { uploadVideo, getMyVideos, getToken, deleteVideo } from "./lib/api";
 import { useAuth } from "./lib/auth";
 
 interface VideoItem {
@@ -24,6 +24,7 @@ const STATUS_CONFIG: Record<string, { emoji: string; color: string; label: strin
 export default function Dashboard() {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [yoloModel, setYoloModel] = useState<string>("yolov8n");
   
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(true);
@@ -68,7 +69,7 @@ export default function Dashboard() {
     setUploading(true);
 
     try {
-      const data = await uploadVideo(file);
+      const data = await uploadVideo(file, yoloModel);
       if (data.video_id) {
         setTimeout(() => {
           router.push(`/video/${data.video_id}`);
@@ -170,6 +171,20 @@ export default function Dashboard() {
           <AnimatePresence>
             {file && (
               <div style={{ textAlign: "center" }}>
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  style={{ display: "flex", justifyContent: "center", gap: "2rem", marginTop: "1.5rem" }}
+                >
+                   <label style={{display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.95rem"}}>
+                       <input type="radio" name="model" checked={yoloModel === 'yolov8n'} onChange={() => setYoloModel('yolov8n')} style={{ accentColor: "var(--accent)" }} />
+                       <span style={{color: yoloModel === 'yolov8n' ? "var(--accent)" : "var(--text-muted)", fontWeight: yoloModel === 'yolov8n' ? 600 : 400}}>⚡ Fast (YOLOv8n)</span>
+                   </label>
+                   <label style={{display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.95rem"}}>
+                       <input type="radio" name="model" checked={yoloModel === 'yolov8s'} onChange={() => setYoloModel('yolov8s')} style={{ accentColor: "var(--accent)" }} />
+                       <span style={{color: yoloModel === 'yolov8s' ? "var(--accent)" : "var(--text-muted)", fontWeight: yoloModel === 'yolov8s' ? 600 : 400}}>🎯 Studio (YOLOv8s)</span>
+                   </label>
+                </motion.div>
                 <motion.button
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -229,8 +244,27 @@ export default function Dashboard() {
                     transition={{ delay: i * 0.05 }}
                     onClick={() => router.push(`/video/${v.id}`)}
                     whileHover={{ scale: 1.02, y: -2 }}
-                    style={{ background: "rgba(20,20,28,0.6)" }}
+                    style={{ background: "rgba(20,20,28,0.6)", position: "relative" }}
                   >
+                   <button 
+                     onClick={async (e) => {
+                       e.stopPropagation();
+                       if (confirm("Delete this video analysis permanently?")) {
+                         try {
+                           await deleteVideo(v.id);
+                           setVideos((prev) => prev.filter(vid => vid.id !== v.id));
+                         } catch(err) {
+                           alert("Failed to delete video. Is backend running?");
+                         }
+                       }
+                     }}
+                     style={{ position: "absolute", top: "12px", right: "12px", background: "rgba(239, 68, 68, 0.15)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "50%", width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.2s z-index 10" }}
+                     onMouseOver={(e) => { e.currentTarget.style.background = "rgba(239, 68, 68, 0.4)"; e.currentTarget.style.transform = "scale(1.1)"; }}
+                     onMouseOut={(e) => { e.currentTarget.style.background = "rgba(239, 68, 68, 0.15)"; e.currentTarget.style.transform = "scale(1)"; }}
+                     title="Delete Video"
+                   >
+                     🗑️
+                   </button>
                     <div className="video-card-icon" style={{ fontSize: "1.5rem" }}>🎬</div>
                     <div className="video-card-info">
                       <h3 className="video-card-name" style={{ fontSize: "0.95rem" }}>{v.filename}</h3>
