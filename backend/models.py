@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import Column, String, Float, Text, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
+from pgvector.sqlalchemy import Vector
 
 from database import Base
 
@@ -58,3 +59,13 @@ class Query(Base):
     model_used = Column(String, nullable=True)  # "local" or "cloud"
 
     video = relationship("Video", back_populates="queries")
+
+class VideoSummary(Base):
+    __tablename__ = "video_summaries"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    video_id = Column(String, ForeignKey("videos.id"), nullable=False)
+    summary_text = Column(Text, nullable=False)
+    embedding = Column(Vector(768)) # Gemini default embedding is 768 dims
+    
+    video = relationship("Video")

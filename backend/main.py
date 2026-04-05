@@ -13,6 +13,14 @@ from routers.videos import router as videos_router
 from routers.query import router as query_router
 
 # ── Create database tables on startup ────────────────────────
+try:
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.commit()
+except Exception as e:
+    print(f"Failed to create pgvector extension: {e}")
+
 Base.metadata.create_all(bind=engine)
 
 # ── App ───────────────────────────────────────────────────────

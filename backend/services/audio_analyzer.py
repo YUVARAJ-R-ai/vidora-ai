@@ -76,7 +76,15 @@ def transcribe_audio(audio_path: str) -> List[Dict[str, Any]]:
 
         segments = []
         for seg in result.get("segments", []):
+            # Guard against common Whisper hallucinations on static/silence
+            if seg.get("no_speech_prob", 0.0) > 0.6:
+                continue
+
             text = seg.get("text", "").strip()
+            # Hardcoded block against common tiny-whisper hallucinated phrases
+            if text.lower() in ["thank you.", "thanks for watching.", "like and subscribe.", "you"]:
+                continue
+
             if text:
                 segments.append({
                     "start": round(seg["start"], 2),

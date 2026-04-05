@@ -34,7 +34,7 @@ def analyze_emotions(frame_path: str) -> List[Dict[str, Any]]:
         results = DeepFace.analyze(
             img_path=frame_path,
             actions=["emotion"],
-            enforce_detection=False,  # Don't crash if no face found
+            enforce_detection=True,  # Strictly require a face to prevent hallucinated detections
             silent=True,
         )
 

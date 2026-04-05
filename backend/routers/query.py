@@ -103,8 +103,40 @@ def ask_query(
     # Build rich multi-modal context
     context = _build_rich_context(detections)
 
+    # ── RAG Memory Lookup (Semantic Search) ───────────────────
+    historical_text = ""
+    try:
+        import os
+        import google.generativeai as genai
+        gem_key = os.getenv("GEMINI_API_KEY", "").strip()
+        if gem_key and len(payload.query) > 5:
+            genai.configure(api_key=gem_key)
+            embed_resp = genai.embed_content(
+                model="models/text-embedding-004",
+                content=payload.query,
+                task_type="retrieval_query"
+            )
+            q_emb = embed_resp['embedding']
+            
+            from models import VideoSummary
+            similar_videos = (
+                db.query(VideoSummary)
+                .filter(VideoSummary.video_id != payload.video_id)
+                .order_by(VideoSummary.embedding.cosine_distance(q_emb))
+                .limit(2)
+                .all()
+            )
+            if similar_videos:
+                historical_text = "\n\n==== HISTORICAL SYSTEM MEMORY (Past similar videos) ====\nThe following past events are retrieved automatically. Use them if the user asks about previous occurrences or general patterns across videos.\n"
+                for i, sv in enumerate(similar_videos):
+                    historical_text += f"[Memory {i+1}]: {sv.summary_text}\n"
+    except Exception as e:
+        print(f"RAG Memory lookup failed: {e}")
+
+    context += historical_text
+
     # Route the query through AI
-    response_text, model_used = route_query(payload.query, context)
+    response_text, model_used = route_query(payload.query, context, video_path=video.filepath)
 
     # Persist query
     db_query = Query(

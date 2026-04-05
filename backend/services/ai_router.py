@@ -1,5 +1,6 @@
 import os
-from typing import Tuple
+import time
+from typing import Tuple, Optional
 
 import httpx
 import google.generativeai as genai
@@ -25,23 +26,29 @@ def _is_complex(query: str) -> bool:
     return any(kw in lower for kw in COMPLEX_KEYWORDS)
 
 
-def _build_prompt(query: str, context: str) -> str:
-    return (
+def _build_prompt(query: str, context: str, has_video: bool = False) -> str:
+    prompt = (
         "You are an expert multi-modal UI assistant analyzing a video.\n"
         "You have access to:\n"
         "- Object detection (YOLO)\n"
         "- Facial emotions (DeepFace)\n"
         "- Scene captions (BLIP)\n"
-        "- Audio transcriptions (Whisper)\n\n"
-        "Here is the data:\n\n"
+        "- Audio transcriptions (Whisper)\n"
+    )
+    if has_video:
+        prompt += "- Raw Video File (Uploaded to API). Please utilize the raw video directly to estimate spatial metrics (speed, altitude, distance) estimating via parallax, object sizes, and motion.\n"
+    
+    prompt += (
+        "\nHere is the data:\n\n"
         f"{context}\n\n"
         f"User question: {query}\n\n"
         "CRITICAL INSTRUCTIONS:\n"
         "1. Be extremely direct, concise, and straight to the point.\n"
         "2. DO NOT mention 'inconsistencies' between different models (e.g., if YOLO sees a bear but BLIP sees a monkey). Synthesize the most logical conclusion confidently without complaining to the user.\n"
         "3. Never narrate your own chain of thought. Just answer the question.\n"
-        "4. Always prioritize human element and action. If emotions spike, highlight what triggered it."
+        "4. Always prioritize human element and action. If estimating speed or altitude, provide your best reasoned guess based on visual cues."
     )
+    return prompt
 
 
 def _call_ollama(prompt: str) -> str:
@@ -83,18 +90,39 @@ def _call_groq(prompt: str) -> str:
         return ""
 
 
-def _call_gemini(prompt: str) -> str:
-    """Call Gemini 1.5 Flash for complex queries."""
+def _call_gemini(prompt: str, video_path: Optional[str] = None) -> str:
+    """Call Gemini 1.5 Flash for complex queries, with optional Raw Video upload."""
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(prompt)
+        
+        contents = [prompt]
+        uploaded_file = None
+        
+        if video_path and os.path.exists(video_path):
+            uploaded_file = genai.upload_file(video_path)
+            # Wait for processing
+            while uploaded_file.state.name == "PROCESSING":
+                time.sleep(2)
+                uploaded_file = genai.get_file(uploaded_file.name)
+            
+            if uploaded_file.state.name == "FAILED":
+                print("Gemini video processing failed.")
+            else:
+                contents.insert(0, uploaded_file)
+
+        response = model.generate_content(contents)
+        
+        # Cleanup file after generation so we don't leak quotas
+        if uploaded_file:
+            genai.delete_file(uploaded_file.name)
+            
         return response.text
     except Exception as e:
         print(f"Gemini error: {e}")
         return ""
 
 
-def route_query(query: str, context: str) -> Tuple[str, str]:
+def route_query(query: str, context: str, video_path: Optional[str] = None) -> Tuple[str, str]:
     """
     Route a user query to the appropriate AI backend.
 
@@ -107,11 +135,11 @@ def route_query(query: str, context: str) -> Tuple[str, str]:
         (response_text, model_used)
         model_used is "cloud" or "local"
     """
-    prompt = _build_prompt(query, context)
+    prompt = _build_prompt(query, context, has_video=bool(video_path and GEMINI_API_KEY))
 
     # ── Complex + Gemini available → cloud ────────────────────
     if _is_complex(query) and GEMINI_API_KEY:
-        response = _call_gemini(prompt)
+        response = _call_gemini(prompt, video_path)
         if response:
             return response, "cloud"
         # Fall through if Gemini fails

@@ -10,6 +10,7 @@ import {
   getToken,
   getVideoStreamUrl,
   cancelVideoProcessing,
+  deleteVideo,
 } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 
@@ -28,6 +29,9 @@ interface DetectionData {
       amplitude_db: number;
       end_sec: number;
     };
+    global_metrics?: { avg_speed: number; max_speed: number };
+    proximity?: number;
+    distances?: Record<string, number>[];
   };
 }
 
@@ -138,9 +142,14 @@ export default function VideoDashboard() {
 
   // ── Derived data ────────────────────────────────────────────
   const visualDetections = useMemo(
-    () => detections.filter((d) => !d.objects_json.audio),
+    () => detections.filter((d) => !d.objects_json.audio && !d.objects_json.global_metrics),
     [detections]
   );
+
+  const globalMetrics = useMemo(() => {
+    const d = detections.find(d => d.objects_json.global_metrics);
+    return d?.objects_json.global_metrics || null;
+  }, [detections]);
 
   const audioSegments = useMemo(
     () =>
@@ -216,6 +225,17 @@ export default function VideoDashboard() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!confirm("Are you sure you want to permanently delete this video and its data?")) return;
+    try {
+      await deleteVideo(videoId);
+      router.push("/");
+    } catch (e) {
+      console.error(e);
+      alert("Failed to delete video.");
+    }
+  };
+
   const duration = videoRef.current?.duration || 100;
 
   // ── Loading State ───────────────────────────────────────────
@@ -230,7 +250,12 @@ export default function VideoDashboard() {
           <div style={{fontSize: "4rem", marginBottom: "1rem"}}>🚫</div>
           <h2 className="title" style={{ fontSize: "2rem" }}>Analysis <span className="title-accent" style={{color: "#ef4444"}}>{status.toUpperCase()}</span></h2>
           <p style={{ color: "var(--text-muted)", marginTop: "1rem" }}>This video process was {status}. Partial data may be saved.</p>
-          <button onClick={() => router.push("/")} className="upload-btn" style={{marginTop: "2rem"}}>Return to Dashboard</button>
+          <div style={{ marginTop: "2rem", display: "flex", gap: "1rem", justifyContent: "center" }}>
+            <button onClick={() => router.push("/")} className="upload-btn">Return to Dashboard</button>
+            <button onClick={handleDelete} className="upload-btn" style={{ background: "linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)", boxShadow: "0 0 20px rgba(239, 68, 68, 0.3)" }}>
+              🗑️ Delete Video
+            </button>
+          </div>
        </div>
     );
   }
@@ -283,6 +308,17 @@ export default function VideoDashboard() {
                         )}
                       </div>
                       <p className="scene-objects" style={{ margin: "5px 0" }}>{d.objects_json.objects?.join(", ") || "—"}</p>
+                      
+                      {/* Telemetry info */}
+                      {d.objects_json.proximity !== undefined && (
+                        <div style={{ display: "flex", gap: "10px", fontSize: "0.8rem", color: d.objects_json.proximity > 0.7 ? "#ef4444" : "var(--accent)" }}>
+                           <span>Radar Proximity: {(d.objects_json.proximity * 100).toFixed(0)}%</span>
+                           {d.objects_json.distances && d.objects_json.distances.length > 0 && Object.values(d.objects_json.distances[0])[0] !== undefined && (
+                             <span>| Target Alt: {(Object.values(d.objects_json.distances[0])[0] as number).toFixed(1)}m</span>
+                           )}
+                        </div>
+                      )}
+                      
                       {d.objects_json.scene_caption && <p className="scene-caption" style={{ color: "var(--text-muted)" }}>"{d.objects_json.scene_caption}"</p>}
                     </motion.div>
                   );
@@ -303,6 +339,9 @@ export default function VideoDashboard() {
           🎬 <span className="title-accent">Vidora AI</span>
         </div>
         <div className="top-bar-actions">
+          <button className="nav-link" onClick={handleDelete} style={{ color: "#ef4444" }}>
+            [ Delete Video ]
+          </button>
           <button className="nav-link" onClick={() => router.push("/")}>
             Dashboard
           </button>
@@ -414,6 +453,25 @@ export default function VideoDashboard() {
               )}
             </div>
 
+            {/* Telemetry stats */}
+            <div className="section-card glass-panel telemetry-card" style={{ flex: "1" }}>
+               <h3 className="section-title">🛰️ Global Telemetry</h3>
+               {globalMetrics ? (
+                 <div style={{display: "flex", gap: "2rem", marginTop: "1rem"}}>
+                   <div>
+                     <p style={{color: "var(--text-muted)", fontSize: "0.9rem"}}>Average Speed</p>
+                     <p style={{fontSize: "1.5rem", color: "var(--accent)", fontWeight: "bold"}}>{globalMetrics.avg_speed.toFixed(2)} px/f</p>
+                   </div>
+                   <div>
+                     <p style={{color: "var(--text-muted)", fontSize: "0.9rem"}}>Max Speed</p>
+                     <p style={{fontSize: "1.5rem", color: "var(--accent)", fontWeight: "bold"}}>{globalMetrics.max_speed.toFixed(2)} px/f</p>
+                   </div>
+                 </div>
+               ) : (
+                 <p className="section-desc">No telemetry data recorded.</p>
+               )}
+            </div>
+
             {/* Audio Transcript */}
             <div className="section-card glass-panel audio-card">
               <h3 className="section-title">🎙️ Audio Transcript</h3>
@@ -473,6 +531,16 @@ export default function VideoDashboard() {
                       <p className="scene-objects">
                         {d.objects_json.objects?.join(", ") || "—"}
                       </p>
+                      
+                      {d.objects_json.proximity !== undefined && (
+                        <div style={{ margin: "5px 0", display: "flex", gap: "10px", fontSize: "0.8rem", color: d.objects_json.proximity > 0.7 ? "#ef4444" : "var(--accent)" }}>
+                           <span>Radar Proximity: {(d.objects_json.proximity * 100).toFixed(0)}%</span>
+                           {d.objects_json.distances && d.objects_json.distances.length > 0 && Object.values(d.objects_json.distances[0])[0] !== undefined && (
+                             <span>| Target Alt: {(Object.values(d.objects_json.distances[0])[0] as number).toFixed(1)}m</span>
+                           )}
+                        </div>
+                      )}
+                      
                       {d.objects_json.scene_caption && (
                         <p className="scene-caption">
                           "{d.objects_json.scene_caption}"
